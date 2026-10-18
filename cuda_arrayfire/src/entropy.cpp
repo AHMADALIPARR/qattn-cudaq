@@ -85,7 +85,10 @@ static bool extract_uint8(const std::string& body, std::vector<uint8_t>& out, st
 static bool extract_nist(const std::string& body, std::vector<uint8_t>& out, std::string& err) {
     auto pos = body.find("localRandomValue");
     if (pos == std::string::npos) { err = "no localRandomValue"; return false; }
-    auto q1 = body.find('"', pos + 16), q2 = body.find('"', q1 + 1);
+    auto colon = body.find(':', pos);
+    if (colon == std::string::npos) { err = "no colon"; return false; }
+    auto q1 = body.find('"', colon);
+    auto q2 = (q1 == std::string::npos) ? std::string::npos : body.find('"', q1 + 1);
     if (q1 == std::string::npos || q2 == std::string::npos) { err = "malformed"; return false; }
     std::string hex = body.substr(q1 + 1, q2 - q1 - 1);
     if (hex.size() < 64 || hex.size() % 2) { err = "short hex"; return false; }
