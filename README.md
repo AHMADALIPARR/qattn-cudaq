@@ -29,7 +29,7 @@ Every token goes through the same circuit. Only the angles change.
 |0⟩ ── Ry(θ₀) ─●────────────────────  q0
 |0⟩ ── Ry(θ₁) ─⊕──●───────────────  q1
 |0⟩ ── Ry(θ₂) ───⊕──●─────────────  q2
-|0⟩ ── Ry(θ₃) ─────⊕──────────────  q3
+|0⟩ ── Ry(θ₃) ─────⊕─────────────  q3
 ```
 
 The register starts in `|0000⟩`. Each `Ry(θ_i)` is the standard Y-rotation,
@@ -73,6 +73,18 @@ with `c = cos(θ/2)` and `s = sin(θ/2)`. Same matrix as the CPU reference. Same
 The host wrappers are `extern "C"`: `cuda_apply_ry`, `cuda_apply_cnot`, `cuda_fidelity`. ArrayFire locks an `af::array`, hands over the device pointer, and these kernels write in place. No copy of the statevector leaves the device until fidelity needs a single double back on the host.
 
 The kernels are the circuit. They are not a wrapper around something else.
+
+## ArrayFire
+
+ArrayFire owns the memory. The kernels own the gates.
+
+The host in `arrayfire/af_backend.cpp` uses the native C++ API, not a binding. On startup `AfSession` calls `af::setBackend(AF_BACKEND_CUDA)` and throws if the active backend is anything else. There is no silent fall back to CPU. If ArrayFire cannot talk to the GPU, the build does not pretend it can.
+
+`af_feature_encode` builds a 16-element `af::array` of complex doubles, `|0000⟩` in the first slot. It evaluates, locks the array, and takes the raw device pointer with `state.device<af::cdouble>()`. That pointer is handed to the CUDA kernels: four `Ry` calls, then the three CNOTs. After `cudaDeviceSynchronize` the array is unlocked and returned. The state never left the device.
+
+`af_fidelity` does the one transfer that matters. It allocates a single double on the device, runs `fidelity_kernel` on the two locked pointers, and copies that double back. Sixteen complex amplitudes stay where they are.
+
+CMake compiles this file only when ArrayFire and the CUDA toolkit are both found. Absent means absent. The CPU reference remains for machines that do not have it.
 
 ## Why the entropy is separate
 
