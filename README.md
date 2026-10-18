@@ -21,6 +21,38 @@ y_i  = Σ_j a_ij · value_j
 
 Qubit 0 is the least significant bit. The statevector is 16 amplitudes. That is the entire feature map. It is small on purpose: small enough to simulate exactly, small enough to check by hand, small enough to run on an RTX 3080 without pretending to be a fault-tolerant machine.
 
+## The circuit
+
+Every token goes through the same circuit. Only the angles change.
+
+```
+|0⟩ ── Ry(θ₀) ─●──────────────────────  q0
+|0⟩ ── Ry(θ₁) ─⊕──●─────────────────  q1
+|0⟩ ── Ry(θ₂) ───⊕──●──────────────  q2
+|0⟩ ── Ry(θ₃) ─────⊕───────────────  q3
+```
+
+The register starts in `|0000⟩`. Each `Ry(θ_i)` is the standard Y-rotation,
+
+```
+Ry(θ) = [[ cos(θ/2), -sin(θ/2) ],
+         [ sin(θ/2),  cos(θ/2) ]]
+```
+
+with `θ_i = embedding[i] · π`. A zero embedding is the identity. `Ry(π)` on a single qubit flips `|0⟩` to `|1⟩`. The four rotations load the token. They do not yet talk to each other.
+
+The CNOT chain is what couples them. Control on qubit 0, target on 1. Then 1 onto 2. Then 2 onto 3. After that, the amplitude of any basis state depends on more than one feature. Two tokens with similar embeddings land in nearby states. Two tokens that differ land farther apart. Fidelity reads that distance.
+
+Zero angles leave the state at `|0000⟩`. The CNOTs do nothing, because every control is off. That is the sanity check. A circuit that cannot sit still when given nothing is wrong.
+
+The same circuit is written three times, on purpose:
+
+- the CPU reference in `src/statevector.cpp`, so the math can be checked without a GPU
+- the CUDA kernels in `cuda/kernels.cu`, same pair mapping, same gate order
+- the CUDA-Q `__qpu__` function in `cudaq/feature_circuit.cpp`, same gates, simulator only
+
+A Bell circuit (`H` then `CNOT`) lives next to the feature circuit in the CUDA-Q module. It is there to test the backend, not to compute attention.
+
 ## Why the entropy is separate
 
 ANU's quantum random number generator measures vacuum fluctuations. NIST's beacon publishes a signed public pulse. Both are real sources of randomness. Neither is a quantum computer.
