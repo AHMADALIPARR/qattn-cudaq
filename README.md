@@ -1,41 +1,51 @@
 # Q-ATTN-01
 
-Native quantum-attention runtime. C++20, CUDA, ArrayFire, CUDA-Q.
+![Q-ATTN-01](docs/cover.jpg)
 
-![Q-ATTN-01 cover](docs/cover.jpg)
+A classical Transformer decides which tokens matter by a dot product. Q-ATTN-01 decides by the fidelity of two quantum states.
 
-Fidelity attention over a 4-qubit feature circuit. Vacuum-fluctuation entropy from ANU is an input, not a circuit. No Python on the production path.
-
-## What it is
-
-| Piece | Role |
-|---|---|
-| Feature circuit | `Ry(θ_i)` on qubit `i`, then `CNOT(0,1)`, `CNOT(1,2)`, `CNOT(2,3)` |
-| Attention | `s_ij = |⟨q_i|q_j⟩|²`, then `a_ij = exp(β s_ij) / Σ_k exp(β s_ik)` |
-| Values | `output_i = Σ_j a_ij · value_j` |
-| Entropy | ANU Quantum Numbers, NIST Beacon, OS crypto. Labeled. Not a quantum circuit. |
-
-`θ_i = embedding[i] · π`. Qubit 0 is the LSB. Statevector dimension is 16.
-
-## Where the code is
+Each token embedding is encoded into a 4-qubit register. Four `Ry` rotations load the features. A CNOT chain entangles them. The attention score between token `i` and token `j` is the overlap of the two resulting states:
 
 ```
-cuda_arrayfire/          production tree
-  src/                   CPU reference, attention, entropy, entrypoint
-  cuda/kernels.cu        GPU kernels (sm_86, RTX 3080)
-  arrayfire/             ArrayFire host, compiled only if found
-  cudaq/                 CUDA-Q circuits, compiled only if found
-  include/qattn/         public headers
-  tests/                 CPU reference tests
-  docs/                  audit and reports
-LICENSE                  SnapKitty Opaque AGPL-3.0
+s_ij = |⟨q_i | q_j⟩|²
 ```
 
-Python prototypes are not in this tree. They remain in git history under `archive/python/`.
+Those scores are softened and normalized, then used to mix classical value vectors. The circuit is quantum. The aggregation is classical. The whole thing is a hybrid.
+
+```
+θ_i = embedding[i] · π
+|q⟩ = Ry(θ) × 4, then CNOT(0,1), CNOT(1,2), CNOT(2,3)
+a_ij = exp(β · s_ij) / Σ_k exp(β · s_ik)
+y_i  = Σ_j a_ij · value_j
+```
+
+Qubit 0 is the least significant bit. The statevector is 16 amplitudes. That is the entire feature map. It is small on purpose: small enough to simulate exactly, small enough to check by hand, small enough to run on an RTX 3080 without pretending to be a fault-tolerant machine.
+
+## Why the entropy is separate
+
+ANU's quantum random number generator measures vacuum fluctuations. NIST's beacon publishes a signed public pulse. Both are real sources of randomness. Neither is a quantum computer.
+
+Q-ATTN-01 treats them that way. Entropy can perturb an angle or seed an experiment. It does not execute a gate. The runtime labels every sample: `anu_modern`, `anu_legacy`, `nist_beacon`, or `os_crypto`. Calling ANU does not run the feature circuit. The feature circuit does not claim to be a QPU.
+
+That separation is the point. Quantum attention is a circuit. Quantum entropy is a number. Mixing the two up is how projects start lying about what they did.
+
+## What runs
+
+The production tree is native. C++20 owns the entrypoint, the statevector, the attention, and the entropy client. CUDA kernels implement the same gates on the GPU. ArrayFire owns the device arrays when it is present. CUDA-Q defines the same circuit in `__qpu__` when it is present. A CPU reference always exists so the math can be checked without a GPU.
+
+Python is not on this path. Earlier prototypes remain in git history under `archive/python/`. They are provenance, not the runtime.
+
+```
+cuda_arrayfire/
+  src/            CPU reference, attention, entropy, main
+  cuda/           Ry, CNOT, fidelity kernels (sm_86)
+  arrayfire/      ArrayFire host, built only if found
+  cudaq/          CUDA-Q feature circuit and Bell circuit
+  include/qattn/  headers
+  tests/          CPU reference tests
+```
 
 ## Build
-
-CPU reference, no GPU required:
 
 ```bash
 cd cuda_arrayfire
@@ -44,28 +54,13 @@ g++ -std=c++20 -Iinclude -o qattn_runtime \
 ./qattn_runtime
 ```
 
-CMake, enables CUDA / ArrayFire / CUDA-Q when detected:
+Or with CMake, which turns on CUDA, ArrayFire, and CUDA-Q only when it finds them:
 
 ```bash
-cd cuda_arrayfire
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build
+cmake -S . -B build && cmake --build build && ctest --test-dir build
 ```
 
-Network entropy requires libcurl at build time (`-DQATTN_HAS_LIBCURL` or a found `CURL` package). The modern ANU endpoint needs `ANU_API_KEY` in the environment. The key is never embedded.
-
-## Status
-
-| Path | State |
-|---|---|
-| CPU reference + tests | Verified. CMake build and `ctest` pass. |
-| Live NIST Beacon | Verified. |
-| Live ANU legacy | Works when the endpoint is up. Failures are reported. |
-| CUDA kernels | Source present. Not executed here (no `nvcc`). |
-| ArrayFire | Source present. Not executed here. |
-| CUDA-Q | Source present. Not executed here. |
-| Physical QPU | Not implemented. Not claimed. |
+Live ANU and NIST need libcurl at build time. The modern ANU endpoint needs `ANU_API_KEY` in the environment. The key is never stored in the tree.
 
 ## License
 
