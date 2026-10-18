@@ -26,10 +26,10 @@ Qubit 0 is the least significant bit. The statevector is 16 amplitudes. That is 
 Every token goes through the same circuit. Only the angles change.
 
 ```
-|0⟩ ── Ry(θ₀) ─●──────────────────────  q0
-|0⟩ ── Ry(θ₁) ─⊕──●─────────────────  q1
-|0⟩ ── Ry(θ₂) ───⊕──●──────────────  q2
-|0⟩ ── Ry(θ₃) ─────⊕───────────────  q3
+|0⟩ ── Ry(θ₀) ─●────────────────────  q0
+|0⟩ ── Ry(θ₁) ─⊕──●───────────────  q1
+|0⟩ ── Ry(θ₂) ───⊕──●─────────────  q2
+|0⟩ ── Ry(θ₃) ─────⊕──────────────  q3
 ```
 
 The register starts in `|0000⟩`. Each `Ry(θ_i)` is the standard Y-rotation,
@@ -52,6 +52,27 @@ The same circuit is written three times, on purpose:
 - the CUDA-Q `__qpu__` function in `cudaq/feature_circuit.cpp`, same gates, simulator only
 
 A Bell circuit (`H` then `CNOT`) lives next to the feature circuit in the CUDA-Q module. It is there to test the backend, not to compute attention.
+
+## The CUDA kernel
+
+The GPU does not call a quantum library. It runs three kernels over a 16-element statevector of `cuDoubleComplex`. The target is `sm_86`, an RTX 3080.
+
+`apply_ry_kernel` launches 8 threads. A 4-qubit state has 8 pairs of amplitudes that differ only in the target bit. Each thread owns one pair. It maps its index onto the basis states where the target bit is clear, reads both amplitudes, and writes the `Ry` mix:
+
+```
+new_low  =  c * a + s * b
+new_high = -s * a + c * b
+```
+
+with `c = cos(θ/2)` and `s = sin(θ/2)`. Same matrix as the CPU reference. Same pair order.
+
+`apply_cnot_kernel` launches 16 threads, one per basis state. A thread whose control bit is off returns. A thread whose control bit is on swaps its amplitude with the state that has the target bit flipped, but only if its index is the lower of the two. That stops the pair from swapping twice.
+
+`fidelity_kernel` is one block of 16. Each thread computes one term of `⟨ψ|φ⟩` into shared memory. A stride reduction folds the real and imaginary parts. Thread 0 writes `|⟨ψ|φ⟩|²`.
+
+The host wrappers are `extern "C"`: `cuda_apply_ry`, `cuda_apply_cnot`, `cuda_fidelity`. ArrayFire locks an `af::array`, hands over the device pointer, and these kernels write in place. No copy of the statevector leaves the device until fidelity needs a single double back on the host.
+
+The kernels are the circuit. They are not a wrapper around something else.
 
 ## Why the entropy is separate
 
