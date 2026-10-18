@@ -1,7 +1,7 @@
 # Historical Python
 
-These files are provenance from the early prototype. They are not on the production path.
+Removed from the production tree. Not part of the native build.
 
-The production runtime is the native C++/CUDA tree at `cuda_arrayfire/`.
+The files (main.py, cudaq_attention.py, qiskit_attention.py, quantum_kernels.py, entropy_sources.py, anu_qrng.py, kernel_demo.py) remain in git history before the production cleanup commits.
 
-Do not import these from the native build. Do not treat them as the current implementation.
+Production runtime: `cuda_arrayfire/`.
