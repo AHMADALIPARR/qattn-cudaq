@@ -78,3 +78,14 @@ python main.py
 python kernel_demo.py
 python entropy_sources.py   # test all entropy sources
 ```
+
+## License
+
+SnapKitty Opaque AGPL-3.0  
+Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective  
+SnapKitty Research Lab — Ahmad Ali Parr, Jessica Westerhoff
+
+SPDX-License-Identifier: AGPL-3.0-only
+
+See [LICENSE](LICENSE) for full terms.  
+Commercial licensing: A.parr@belespritdaccord.uk
